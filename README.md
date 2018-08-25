@@ -18,7 +18,7 @@ Upgrades source file to use f-strings wherever possible. i.e. converts this
 into this:
 
 ```python
-'{myvar} string literal'
+f'{myvar} string literal'
 ```
 
 # Requirements
