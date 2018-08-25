@@ -21,6 +21,10 @@ into this:
 f'{myvar} string literal'
 ```
 
+# Warning
+
+This repo exists primarily as a learning exercise. You should exercise care (or, run away!) if trying to using these scripts on code that is dear to you.
+
 # Requirements
 
 Python 3.6+
