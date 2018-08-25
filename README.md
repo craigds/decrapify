@@ -24,6 +24,7 @@ f'{myvar} string literal'
 # Requirements
 
 Python 3.6+
+The other stuff in `requirements.txt`
 
 # Install
 
