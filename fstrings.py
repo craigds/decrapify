@@ -27,21 +27,25 @@ RE_OLD_INTERPOLATION_BASIC = re.compile(r'(?<!%)%[fds]')
 
 
 def old_interpolation_to_fstrings(node, capture, filename):
+    """
+    '%s' % xyz
+        --> f'{xyz}'
+    """
     print("Selected expression: ", list(node.children))
 
-    formatstring = node.children[0]
-    operand = node.children[2]
-    if isinstance(operand, Leaf) and operand.type == TOKEN.NAME:
+    formatstring = capture['formatstring']
+    interpolation_args = capture['interpolation_args']
+    if isinstance(interpolation_args, Leaf):
         # string interpolation (old style), where the thing on the right is a name.
         # e.g. `'foo %s' % bar
-        interpolation_args = [operand.value]
-    elif isinstance(operand, Node):
+        interpolation_args = [interpolation_args]
+    elif isinstance(interpolation_args, list):
         # string interpolation (old style), where the thing on the right is a tuple.
         # e.g. `'foo %s %s' % (bar, baz)
         # first, find the 'bar' and 'baz' bits:
         interpolation_args = [
             o.value
-            for o in operand.children[1].children
+            for o in interpolation_args
             if isinstance(o, Leaf) and o.type == TOKEN.NAME
         ]
 
@@ -109,9 +113,12 @@ def main():
         # ... where the thing on the right is a tuple of variable names.
         .select('''
             (
-                term< STRING '%' NAME >
+                term<
+                    formatstring=STRING '%' interpolation_args=NAME >
             |
-                term< STRING '%' atom< '(' (testlist_gexp< (NAME ',')* NAME [','] >) ')' > >
+                term< formatstring=STRING '%' atom< '('
+                    (testlist_gexp< interpolation_args=((NAME ',')* NAME [',']) >)
+                ')' > >
             )
         ''')
         .modify(callback=old_interpolation_to_fstrings)
