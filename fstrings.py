@@ -47,7 +47,7 @@ def old_interpolation_to_fstrings(node, capture, filename):
     if isinstance(interpolation_args, Leaf):
         # string interpolation (old style), where the thing on the right is a name.
         # e.g. `'foo %s' % bar
-        interpolation_args = [interpolation_args]
+        interpolation_args = [interpolation_args.value]
     elif isinstance(interpolation_args, list):
         # string interpolation (old style), where the thing on the right is a tuple.
         # e.g. `'foo %s %s' % (bar, baz)
