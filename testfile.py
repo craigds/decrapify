@@ -27,7 +27,13 @@ a_dict = {'a': 'interpolated'}
 
 'this is an {interpolated} string'.format(interpolated=interpolated)
 
-# Cases to *ignore* (mostly we only really want basic names in f-strings,
-# because including too much can harm readability)
+u"the 'u' should go away from this {string}".format(string=string)
+r"the 'r' should be preserved in this {string}".format(string=string)
+
+# Cases to *ignore*:
+# mostly we only really want basic names in f-strings,
+# because including too much can harm readability:
 'this is an {} string'.format('interpolated')
 'this is an {} string'.format(a_dict['a'])
+# 'b' and 'f' prefixes can't be combined
+b"this kind of {string} shouldn't become an f-string".format(string=string)

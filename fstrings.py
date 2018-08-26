@@ -36,6 +36,39 @@ RE_OLD_INTERPOLATION_BASIC = re.compile(r'(?<!%)%[fds]')
 # No 're' docs on my flight :(
 RE_NEW_INTERPOLATION_BASIC = re.compile(r'(?<!{)\{[^{}!]*\}')
 
+RE_STRING_LITERAL_PREFIX = re.compile(r'^([uUrRbBfF]*)(.*)$')
+
+
+class SkipString(ValueError):
+    pass
+
+
+def add_f_prefix(string_value):
+    """
+    Adds the 'f' prefix to a string value in a sensible way.
+    """
+    match = RE_STRING_LITERAL_PREFIX.match(string_value)
+    if not match:
+        # huh?
+        raise SkipString
+
+    current_prefix = match.group(1)
+    the_rest = match.group(2)
+    if 'f' in current_prefix.lower():
+        return string_value
+
+    # https://docs.python.org/3/reference/lexical_analysis.html#strings
+    # The 'f' may be combined with 'r', but not with 'b' or 'u'
+    if 'b' in current_prefix.lower():
+        raise SkipString
+
+    prefix = current_prefix
+    if 'u' in current_prefix.lower():
+        # 'u' is unnecessary these days, just strip it.
+        prefix = ''.join(char for char in prefix if char not in 'uU')
+
+    return f'f{prefix}{the_rest}'
+
 
 def old_interpolation_to_fstrings(node, capture, filename):
     """
@@ -72,18 +105,20 @@ def old_interpolation_to_fstrings(node, capture, filename):
         formatstring.value,
     )
 
+    # Make sure we consumed all the arguments, otherwise something went wrong.
+    assert not interpolation_args
+
+    # Convert to an f-string.
+    try:
+        replacement_value = add_f_prefix(replacement_value)
+    except SkipString:
+        return node
+
     if flags['debug']:
         print(f"Interpolating (old-style) format-string:\n\t{formatstring}")
         print(f"With arguments:\n\t{interpolation_args}")
         print(f"Replacement formatstring: {replacement_value}")
         print()
-
-    # Make sure we consumed all the arguments, otherwise something went wrong.
-    assert not interpolation_args
-
-    # Convert to an f-string.
-    if not replacement_value.startswith('f'):
-        replacement_value = f'f{replacement_value}'  # dogfooding!
 
     # Finally, replace the formatstring node in the CST, and remove the operator & operand.
     formatstring.value = replacement_value
@@ -125,8 +160,7 @@ def _interpret_format_arguments(arg):
         if arg.children[0].type in STARS:
             # *args, or **kwargs.
             # Not useful for f-stringing. Give up.
-            yield None
-            return
+            raise SkipString
 
         # Single keyword argument: .format(keyword=value)
         # The three child nodes here are (keyword, '=', value).
@@ -134,7 +168,7 @@ def _interpret_format_arguments(arg):
         if not isinstance(value, Leaf):
             # Might be complex? Give up. This stops parsing of the entire expression,
             # beacuse having an f-string *and* a .format() is pretty nasty.
-            yield None
+            raise SkipString
         else:
             yield {
                 arg.children[0].value: value.value
@@ -146,7 +180,7 @@ def _interpret_format_arguments(arg):
         # Something else.
         # Might be a complex expression? Give up. This stops parsing of the entire expression,
         # because having an f-string *and* a .format() is pretty nasty.
-        yield None
+        raise SkipString
 
 
 def format_method_to_fstrings(node, capture, filename):
@@ -162,37 +196,43 @@ def format_method_to_fstrings(node, capture, filename):
     interpolation_args = capture['interpolation_args']
 
     # We only convert .format() stuff to an f-string if the arguments are all simple-ish.
-    # That means:
-    #  * name-only: `abc`
-
+    # Currently that means we ignore dotted names, dict['things'] and literals.
     positional_args = []
     keyword_args = {
         # Maps kwarg names (strings) to the kwarg *value*
         # e.g. for .format(a=b) this would be {'a': 'b'}
     }
-    for parsed_arg in _interpret_format_arguments(interpolation_args):
-        if parsed_arg is None:
-            # This arg was deemed too complex to bother pushing into an f-string.
-            # Give up.
-            return node
-        elif isinstance(parsed_arg, dict):
-            keyword_args.update(parsed_arg)
-        else:
-            positional_args.append(parsed_arg)
+    try:
+        for parsed_arg in _interpret_format_arguments(interpolation_args):
+            if parsed_arg is None:
+                # This arg was deemed too complex to bother pushing into an f-string.
+                # Give up.
+                return node
+            elif isinstance(parsed_arg, dict):
+                keyword_args.update(parsed_arg)
+            else:
+                positional_args.append(parsed_arg)
 
-    # Actually push the new names into a new formatstring. Wrap each value with curly braces.
-    replacement = formatstring.value.format(
-        *['{%s}' % a for a in positional_args],
-        **{k: '{%s}' % v for (k, v) in keyword_args.items()}
-    )
-    if flags['debug']:
-        print(f"Interpolating (new-style) format-string:\n\t{formatstring}")
-        print(f"With arguments:\n\t{positional_args}, {keyword_args}")
-        print(f"Replacement formatstring: {replacement}")
-        print()
+        # Actually push the new names into a new formatstring. Wrap each value with curly braces.
+        replacement_value = formatstring.value.format(
+            *['{%s}' % a for a in positional_args],
+            **{k: '{%s}' % v for (k, v) in keyword_args.items()}
+        )
+
+        # Convert to an f-string
+        replacement_value = add_f_prefix(replacement_value)
+
+        if flags['debug']:
+            print(f"Interpolating (new-style) format-string:\n\t{formatstring}")
+            print(f"With arguments:\n\t{positional_args}, {keyword_args}")
+            print(f"Replacement formatstring: {replacement_value}")
+            print()
+
+    except SkipString:
+        return node
 
     # Finally, apply the whole thing
-    formatstring.value = replacement
+    formatstring.value = replacement_value
     capture['trailer1'].remove()
     capture['trailer2'].remove()
     return node
