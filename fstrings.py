@@ -26,7 +26,7 @@ from bowler.types import Leaf, Node
 RE_OLD_INTERPOLATION_BASIC = re.compile(r'(?<!%)%[fds]')
 
 
-def convert_to_fstrings(node, capture, filename):
+def old_interpolation_to_fstrings(node, capture, filename):
     print("Selected expression: ", list(node.children))
 
     formatstring = node.children[0]
@@ -101,10 +101,12 @@ def main():
         # Look for files in the current working directory
         Query(*args.files)
 
-        # try to match:
-        # string interpolation (old style), where the thing on the right is a name
-        # string interpolation (old style), where the thing on the right is a tuple
-        # TODO: .format()
+        # NOTE: You can append as many .select().modify() bits as you want to one query.
+        # Each .modify() acts only on the .select[_*]() immediately prior.
+
+        # 1. String interpolation (old style):
+        # ... where the thing on the right is a variable name
+        # ... where the thing on the right is a tuple of variable names.
         .select('''
             (
                 term< STRING '%' NAME >
@@ -112,7 +114,11 @@ def main():
                 term< STRING '%' atom< '(' (testlist_gexp< (NAME ',')* NAME [','] >) ')' > >
             )
         ''')
-        .modify(callback=convert_to_fstrings)
+        .modify(callback=old_interpolation_to_fstrings)
+
+        # 2. TODO: New-style interpolation (.format(...))
+
+
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
             interactive=(args.interactive and args.write),
