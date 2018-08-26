@@ -15,6 +15,7 @@ TODO: plenty:
     * Handle .format(), with both args and kwargs
 """
 
+import argparse
 import re
 import sys
 
@@ -71,21 +72,54 @@ def convert_to_fstrings(node, capture, filename):
     return node
 
 
-query = (
-    # Look for files in the current working directory
-    Query(sys.argv[1])
+def main():
+    parser = argparse.ArgumentParser(
+        description="Converts string interpolation expressions to use f-strings where possible."
+    )
+    parser.add_argument(
+        '--no-input',
+        dest='interactive',
+        default=True,
+        action='store_false',
+        help="Non-interactive mode"
+    )
+    parser.add_argument(
+        '--no-write',
+        dest='write',
+        default=True,
+        action='store_false',
+        help="Don't write the changes to the source file, just output a diff to stdout"
+    )
+    parser.add_argument(
+        'files',
+        nargs='+',
+        help="The python source file(s) to operate on."
+    )
+    args = parser.parse_args()
 
-    # try to match:
-    # string interpolation (old style), where the thing on the right is a name
-    # string interpolation (old style), where the thing on the right is a tuple
-    # TODO: .format()
-    .select('''
-        (
-            term< STRING '%' NAME >
-        |
-            term< STRING '%' atom< '(' (testlist_gexp< (NAME ',')* NAME [','] >) ')' > >
+    query = (
+        # Look for files in the current working directory
+        Query(*args.files)
+
+        # try to match:
+        # string interpolation (old style), where the thing on the right is a name
+        # string interpolation (old style), where the thing on the right is a tuple
+        # TODO: .format()
+        .select('''
+            (
+                term< STRING '%' NAME >
+            |
+                term< STRING '%' atom< '(' (testlist_gexp< (NAME ',')* NAME [','] >) ')' > >
+            )
+        ''')
+        .modify(callback=convert_to_fstrings)
+        .execute(
+            # interactive diff implies write (for the bits the user says 'y' to)
+            interactive=(args.interactive and args.write),
+            write=args.write,
         )
-    ''')
-    .modify(callback=convert_to_fstrings)
-    .diff(interactive=True)
-)
+    )
+
+
+if __name__ == '__main__':
+    main()
