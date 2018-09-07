@@ -273,8 +273,6 @@ def main():
     # No way to pass this to .modify() callables, so we just set it at module level
     flags['debug'] = args.debug
 
-    # TODO: merge these two queries, once I figure out how.
-    # https://github.com/facebookincubator/Bowler/issues/1
     query = (
         # Look for files in the current working directory
         Query(*args.files)
@@ -296,14 +294,6 @@ def main():
             )
         ''')
         .modify(callback=old_interpolation_to_fstrings)
-        .execute(
-            # interactive diff implies write (for the bits the user says 'y' to)
-            interactive=(args.interactive and args.write),
-            write=args.write,
-        )
-    )
-    (
-        Query(*args.files)
 
         # 2. New-style interpolation (.format(...))
         # The 'power<>' thing is confusing to me. What's 'power' mean in this context?
@@ -323,6 +313,7 @@ def main():
         ''')
         .modify(callback=format_method_to_fstrings)
 
+        # Actually run both of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
             interactive=(args.interactive and args.write),
