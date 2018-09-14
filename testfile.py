@@ -68,6 +68,16 @@ class Foo(unittest.TestCase):
         self.assertNotEqual('a', 'b', message='c')
         self.assertNotEqual('a', 1, message='c')
 
+        # special cases
+        # --> 'assert a is None', etc
+        self.assertEqual(a, None)
+        self.assertNotEqual(a, None)
+        # --> 'assert a', etc. NOTE: assertEqual *doesn't* do `assert a is True`
+        self.assertEqual(a, True)
+        self.assertNotEqual(a, True)
+        self.assertEqual(a, False)
+        self.assertNotEqual(a, False)
+
         # some synonyms
         self.assertEquals('a', 'b', 'c')
         self.failUnlessEqual('a', 'b', 'c')

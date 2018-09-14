@@ -25,6 +25,7 @@ OPERATORS = {
     'assertNotEqual': Leaf(TOKEN.NOTEQUAL, '!=', prefix=' '),
     'failIfEqual': Leaf(TOKEN.NOTEQUAL, '!=', prefix=' '),
 }
+BOOLEAN_VALUES = ('True', 'False')
 
 
 # TODO : Add this to fissix.fixer_util
@@ -52,7 +53,7 @@ def assertequal_to_assert(node, capture, filename):
     --> assert foo == bar, msg
 
     self.assertNotEqual(foo, bar, msg)
-    --> assert foo == bar, msg
+    --> assert foo != bar, msg
     """
 
     if flags['debug']:
@@ -94,10 +95,37 @@ def assertequal_to_assert(node, capture, filename):
     # Figure out the appropriate operator
     function_name = capture['function_name']
     op_token = OPERATORS[function_name.value]
+    assert_test_nodes = [a.clone(), op_token.clone(), b.clone()]
+
+    # Handle some special cases
+    if a.value in BOOLEAN_VALUES or b.value in BOOLEAN_VALUES:
+        # use `assert a` instead of `assert a == True` etc
+        if a.value in BOOLEAN_VALUES:
+            bool_, tok = a, b
+        else:
+            tok, bool_ = a, b
+
+        # handle negatives and double negatives:
+        # assertNotEqual(x, False) --> assert x`
+        invert = bool_.value == 'False'
+        if op_token.type == TOKEN.NOTEQUAL:
+            invert = not invert
+        tok = tok.clone()
+        if invert:
+            tok.prefix = ' '
+            assert_test_nodes = [Leaf(TOKEN.NAME, 'not'), tok]
+        else:
+            assert_test_nodes = [tok]
+
+    elif a.value == 'None' or b.value == 'None':
+        # use `assert a is None` instead of `assert a == None` etc
+        assert_test_nodes = [a.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), b.clone()]
+        if op_token.type == TOKEN.NOTEQUAL:
+            assert_test_nodes.insert(-1, Leaf(TOKEN.NAME, 'not', prefix=' '))
 
     # Finally, apply the whole thing
     assertion = Assert(
-        [a.clone(), op_token.clone(), b.clone()],
+        assert_test_nodes,
         message.clone() if message else None,
         prefix=node.prefix,
     )
@@ -160,7 +188,7 @@ def main():
         .select_method('assertNotEqual').modify(callback=assertequal_to_assert)
         .select_method('failIfEqual').modify(callback=assertequal_to_assert)
 
-        # Actually run both of the above.
+        # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
             interactive=(args.interactive and args.write),
