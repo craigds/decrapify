@@ -5,6 +5,7 @@ lib
 share
 local
 dist
+venv
 man
 cover
 *.o
