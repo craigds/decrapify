@@ -71,12 +71,15 @@ class Foo(unittest.TestCase):
         # special cases
         # --> 'assert a is None', etc
         self.assertEqual(a, None)
+        self.assertEqual(None, a)
         self.assertNotEqual(a, None)
+        self.assertNotEqual(None, a)
         # --> 'assert a', etc. NOTE: assertEqual *doesn't* do `assert a is True`
         self.assertEqual(a, True)
         self.assertNotEqual(a, True)
         self.assertEqual(a, False)
         self.assertNotEqual(a, False)
+        self.assertEqual(True, a)
 
         # some synonyms
         self.assertEquals('a', 'b', 'c')

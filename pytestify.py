@@ -103,9 +103,9 @@ def assertequal_to_assert(node, capture, filename):
     assert_test_nodes = [a.clone(), op_token.clone(), b]
 
     # Handle some special cases
-    if a.value in BOOLEAN_VALUES or b.value in BOOLEAN_VALUES:
+    if getattr(a, 'value', None) in BOOLEAN_VALUES or getattr(b, 'value', None) in BOOLEAN_VALUES:
         # use `assert a` instead of `assert a == True` etc
-        if a.value in BOOLEAN_VALUES:
+        if getattr(a, 'value') in BOOLEAN_VALUES:
             bool_, tok = a, b
         else:
             tok, bool_ = a, b
@@ -122,9 +122,17 @@ def assertequal_to_assert(node, capture, filename):
         else:
             assert_test_nodes = [tok]
 
-    elif a.value == 'None' or b.value == 'None':
+    elif getattr(a, 'value', None) == 'None' or getattr(b, 'value', None) == 'None':
         # use `assert a is None` instead of `assert a == None` etc
-        assert_test_nodes = [a.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), b]
+        if getattr(a, 'value') == 'None':
+            none_, tok = a, b
+        else:
+            tok, none_ = a, b
+
+        none_ = none_.clone()
+        none_.prefix = ' '
+
+        assert_test_nodes = [tok.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), none_]
         if op_token.type == TOKEN.NOTEQUAL:
             assert_test_nodes.insert(-1, Leaf(TOKEN.NAME, 'not', prefix=' '))
 
