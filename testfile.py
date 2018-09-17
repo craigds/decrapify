@@ -82,3 +82,22 @@ class Foo(unittest.TestCase):
         self.assertEquals('a', 'b', 'c')
         self.failUnlessEqual('a', 'b', 'c')
         self.failIfEqual('a', 'b', 'c')
+
+        # multi-line ones
+        self.assertEqual(
+            'a',
+            'b')
+        self.assertEqual('a',
+            'b')
+        self.assertEqual(
+            'a',
+            'b'
+        )
+        self.assertEqual(
+            'a'
+            ,
+            'b'
+            ,
+            'message'
+            ,
+        )

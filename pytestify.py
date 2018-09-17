@@ -95,7 +95,12 @@ def assertequal_to_assert(node, capture, filename):
     # Figure out the appropriate operator
     function_name = capture['function_name']
     op_token = OPERATORS[function_name.value]
-    assert_test_nodes = [a.clone(), op_token.clone(), b.clone()]
+
+    # Un-multi-line, where a and b are on separate lines
+    b = b.clone()
+    b.prefix = ' '
+
+    assert_test_nodes = [a.clone(), op_token.clone(), b]
 
     # Handle some special cases
     if a.value in BOOLEAN_VALUES or b.value in BOOLEAN_VALUES:
@@ -111,15 +116,15 @@ def assertequal_to_assert(node, capture, filename):
         if op_token.type == TOKEN.NOTEQUAL:
             invert = not invert
         tok = tok.clone()
+        tok.prefix = ' '
         if invert:
-            tok.prefix = ' '
             assert_test_nodes = [Leaf(TOKEN.NAME, 'not'), tok]
         else:
             assert_test_nodes = [tok]
 
     elif a.value == 'None' or b.value == 'None':
         # use `assert a is None` instead of `assert a == None` etc
-        assert_test_nodes = [a.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), b.clone()]
+        assert_test_nodes = [a.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), b]
         if op_token.type == TOKEN.NOTEQUAL:
             assert_test_nodes.insert(-1, Leaf(TOKEN.NAME, 'not', prefix=' '))
 
