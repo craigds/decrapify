@@ -60,7 +60,6 @@ def is_multiline(node):
 
 
 def parenthesize_if_necessary(node):
-    print("is_multiline(%s) = %s" % (node,is_multiline(node)))
     if is_multiline(node):
         # If not already parenthesized, parenthesize
         for first_leaf in node.leaves():
@@ -91,7 +90,6 @@ def conversion(func):
             return node
 
         # This is wrapped in a list for some reason?
-        print("arguments nodes: ", arguments_nodes)
         arguments_node = arguments_nodes[0]
 
         if arguments_node.type == syms.arglist:
@@ -210,7 +208,6 @@ def asserttrue_to_assert(node, capture, arguments):
     self.assertFalse(foo, msg)
     --> assert not foo, msg
     """
-    print("a =", arguments)
     if len(arguments) not in (1, 2):
         # Not sure what this is. Leave it alone.
         return None
