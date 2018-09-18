@@ -9,7 +9,9 @@ Not particularly thorough.
 import argparse
 import re
 import sys
+from functools import wraps
 
+from fissix.fixer_util import parenthesize
 from fissix.pygram import python_symbols as syms
 
 from bowler import Query, TOKEN, SYMBOL
@@ -47,7 +49,80 @@ def Assert(test, message=None, **kwargs):
     )
 
 
-def assertequal_to_assert(node, capture, filename):
+def is_multiline(node):
+    if isinstance(node, list):
+        return any(is_multiline(n) for n in node)
+
+    for leaf in node.leaves():
+        if '\n' in leaf.prefix:
+            return True
+    return False
+
+
+def parenthesize_if_necessary(node):
+    print("is_multiline(%s) = %s" % (node,is_multiline(node)))
+    if is_multiline(node):
+        # If not already parenthesized, parenthesize
+        for first_leaf in node.leaves():
+            if first_leaf.type == TOKEN.LPAR:
+                # Already parenthesized
+                return node
+            break
+        return parenthesize(node.clone())
+    return node
+
+
+def conversion(func):
+    """
+    Decorator. Handle some boilerplate
+    """
+    @wraps(func)
+    def wrapper(node, capture, filename):
+        if flags['debug']:
+            print("Selected expression: ", list(node.children))
+
+        if capture.get('function_def'):
+            # Not interested in `def assertEqual`, leave that alone.
+            # We only care about *calls*
+            return node
+
+        arguments_nodes = capture['function_arguments']
+        if not arguments_nodes:
+            return node
+
+        # This is wrapped in a list for some reason?
+        print("arguments nodes: ", arguments_nodes)
+        arguments_node = arguments_nodes[0]
+
+        if arguments_node.type == syms.arglist:
+            # multiple arguments
+            actual_arguments = [
+                n
+                for n in arguments_node.children
+                if n.type != TOKEN.COMMA
+            ]
+        elif arguments_node.type == syms.comparison:
+            # one argument
+            actual_arguments = [arguments_node]
+        else:
+            # self.assertTrue(*args) perhaps. Can't do much with this really.
+            return
+
+        assertion = func(node, capture, actual_arguments)
+
+        if assertion is not None:
+            if flags['debug']:
+                print(f"Replacing:\n\t{node}")
+                print(f"With: {assertion}")
+                print()
+
+            node.replace(assertion)
+            return assertion
+    return wrapper
+
+
+@conversion
+def assertequal_to_assert(node, capture, arguments):
     """
     self.assertEqual(foo, bar, msg)
     --> assert foo == bar, msg
@@ -55,36 +130,11 @@ def assertequal_to_assert(node, capture, filename):
     self.assertNotEqual(foo, bar, msg)
     --> assert foo != bar, msg
     """
-
-    if flags['debug']:
-        print("Selected expression: ", list(node.children))
-
-    if capture.get('function_def'):
-        # Not interested in `def assertEqual`, leave that alone.
-        # We only care about *calls*
-        return node
-
-    arguments_nodes = capture['function_arguments']
-    if not arguments_nodes:
-        return node
-
-    # This is wrapped in a list for some reason?
-    arguments_node = arguments_nodes[0]
-
-    if arguments_node.type != syms.arglist:
-        # self.assertEqual(*args) perhaps. Can't do much with this really.
-        return node
-
-    actual_arguments = [
-        n
-        for n in arguments_node.children
-        if n.type != TOKEN.COMMA
-    ]
-    if len(actual_arguments) not in (2, 3):
+    if len(arguments) not in (2, 3):
         # Not sure what this is. Leave it alone.
-        return node
+        return None
 
-    a, b, *rest = actual_arguments
+    a, b, *rest = arguments
     message = None
     if rest:
         message = rest[0]
@@ -99,6 +149,14 @@ def assertequal_to_assert(node, capture, filename):
     # Un-multi-line, where a and b are on separate lines
     b = b.clone()
     b.prefix = ' '
+
+    # Avoid creating syntax errors for multi-line nodes
+    # (this is overly restrictive, but better than overly lax)
+    # https://github.com/facebookincubator/Bowler/issues/12
+    a = parenthesize_if_necessary(a)
+    b = parenthesize_if_necessary(b)
+    if message:
+        message = parenthesize_if_necessary(message)
 
     assert_test_nodes = [a.clone(), op_token.clone(), b]
 
@@ -136,20 +194,56 @@ def assertequal_to_assert(node, capture, filename):
         if op_token.type == TOKEN.NOTEQUAL:
             assert_test_nodes.insert(-1, Leaf(TOKEN.NAME, 'not', prefix=' '))
 
-    # Finally, apply the whole thing
-    assertion = Assert(
+    return Assert(
         assert_test_nodes,
         message.clone() if message else None,
         prefix=node.prefix,
     )
 
-    if flags['debug']:
-        print(f"Replacing:\n\t{node}")
-        print(f"With: {assertion}")
-        print()
 
-    node.replace(assertion)
-    return assertion
+@conversion
+def asserttrue_to_assert(node, capture, arguments):
+    """
+    self.assertTrue(foo, msg)
+    --> assert foo, msg
+
+    self.assertFalse(foo, msg)
+    --> assert not foo, msg
+    """
+    print("a =", arguments)
+    if len(arguments) not in (1, 2):
+        # Not sure what this is. Leave it alone.
+        return None
+
+    a = arguments[0]
+    message = None
+    if len(arguments) > 1:
+        message = arguments[1]
+        if message.type == syms.argument:
+            # keyword argument (e.g. `msg=abc`)
+            message = message.children[2]
+
+    a = a.clone()
+    a.prefix = ' '
+
+    # Avoid creating syntax errors for multi-line nodes
+    # (this is overly restrictive, but better than overly lax)
+    # https://github.com/facebookincubator/Bowler/issues/12
+    a = parenthesize_if_necessary(a)
+    if message:
+        message = parenthesize_if_necessary(message)
+
+    function_name = capture['function_name']
+    if function_name in ('failIf', 'assertFalse'):
+        assert_test_nodes = [Leaf(TOKEN.NAME, 'not'), a]
+    else:
+        assert_test_nodes = [a]
+
+    return Assert(
+        assert_test_nodes,
+        message.clone() if message else None,
+        prefix=node.prefix,
+    )
 
 
 def main():
@@ -200,6 +294,13 @@ def main():
 
         .select_method('assertNotEqual').modify(callback=assertequal_to_assert)
         .select_method('failIfEqual').modify(callback=assertequal_to_assert)
+
+        .select_method('assertTrue').modify(callback=asserttrue_to_assert)
+        .select_method('assert_').modify(callback=asserttrue_to_assert)
+        .select_method('failUnless').modify(callback=asserttrue_to_assert)
+
+        .select_method('assertFalse').modify(callback=asserttrue_to_assert)
+        .select_method('failIf').modify(callback=asserttrue_to_assert)
 
         # Actually run all of the above.
         .execute(

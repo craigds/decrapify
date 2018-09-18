@@ -45,7 +45,7 @@ class Foo(unittest.TestCase):
     def assertEqual(self, foo, bar, msg):
         pass
 
-    def x(self):
+    def test_assertequal(self):
         # won't be modified
         self.assertEqual()
         self.assertEqual('a')
@@ -104,3 +104,21 @@ class Foo(unittest.TestCase):
             'message'
             ,
         )
+
+    def test_asserttrue(self):
+        # ignored
+        self.assertTrue()
+        self.assertTrue(a, b, c)
+
+        # modified
+        self.assertTrue(a == b)
+        self.assertTrue(a == b, message)
+        self.assertTrue('a'
+            ' string', message
+        )
+        self.failIf(a == b)
+
+        # some synonyms
+        self.failIf(a)
+        self.failUnless(a)
+        self.assert_(a)
