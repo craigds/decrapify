@@ -148,13 +148,17 @@ def assertequal_to_assert(node, capture, arguments):
     b = b.clone()
     b.prefix = ' '
 
-    # Avoid creating syntax errors for multi-line nodes
-    # (this is overly restrictive, but better than overly lax)
-    # https://github.com/facebookincubator/Bowler/issues/12
-    a = parenthesize_if_necessary(a)
-    b = parenthesize_if_necessary(b)
-    if message:
-        message = parenthesize_if_necessary(message)
+    if flags.get('skip_multiline_expressions'):
+        if is_multiline(a) or is_multiline(b) or (message and is_multiline(message)):
+            return
+    else:
+        # Avoid creating syntax errors for multi-line nodes
+        # (this is overly restrictive, but better than overly lax)
+        # https://github.com/facebookincubator/Bowler/issues/12
+        a = parenthesize_if_necessary(a)
+        b = parenthesize_if_necessary(b)
+        if message:
+            message = parenthesize_if_necessary(message)
 
     assert_test_nodes = [a.clone(), op_token.clone(), b]
 
@@ -223,12 +227,16 @@ def asserttrue_to_assert(node, capture, arguments):
     a = a.clone()
     a.prefix = ' '
 
-    # Avoid creating syntax errors for multi-line nodes
-    # (this is overly restrictive, but better than overly lax)
-    # https://github.com/facebookincubator/Bowler/issues/12
-    a = parenthesize_if_necessary(a)
-    if message:
-        message = parenthesize_if_necessary(message)
+    if flags.get('skip_multiline_expressions'):
+        if is_multiline(a) or (message and is_multiline(message)):
+            return
+    else:
+        # Avoid creating syntax errors for multi-line nodes
+        # (this is overly restrictive, but better than overly lax)
+        # https://github.com/facebookincubator/Bowler/issues/12
+        a = parenthesize_if_necessary(a)
+        if message:
+            message = parenthesize_if_necessary(message)
 
     function_name = capture['function_name']
     if function_name in ('failIf', 'assertFalse'):
@@ -269,6 +277,15 @@ def main():
         help="Spit out debugging information"
     )
     parser.add_argument(
+        '--skip-multiline-expressions',
+        default=False,
+        action='store_true',
+        help=(
+            "Skip handling lines that contain multiline expressions. "
+            "The code isn't yet able to handle them well. Output is valid but not pretty"
+        )
+    )
+    parser.add_argument(
         'files',
         nargs='+',
         help="The python source file(s) to operate on."
@@ -277,6 +294,7 @@ def main():
 
     # No way to pass this to .modify() callables, so we just set it at module level
     flags['debug'] = args.debug
+    flags['skip_multiline_expressions'] = args.skip_multiline_expressions
 
     query = (
         # Look for files in the current working directory
