@@ -172,3 +172,20 @@ dict(
         (a, b) for a, b in x
     )
 )
+
+
+set([a for a in x])
+set((a for a in x))
+set(a for a in x)
+
+set([
+    a for a in x
+])
+set(
+    (
+        a for a in x
+    )
+)
+set(
+    a for a in x
+)

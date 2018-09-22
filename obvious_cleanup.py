@@ -133,6 +133,32 @@ def make_dict_comprehension(node, capture, arguments):
     )
 
 
+def make_set_comprehension(node, capture, arguments):
+    arg = capture['arg']
+    forloop = capture['forloop'][0]
+    ifpart = capture.get('ifpart') or None
+
+    forloop.type = syms.comp_for
+    if ifpart:
+        ifpart.type = syms.comp_if
+
+    node.replace(
+        Node(
+            syms.atom,
+            [
+                Leaf(TOKEN.LBRACE, "{"),
+                Node(
+                    syms.dictsetmaker,
+                    [arg.clone(), forloop.clone()],
+                    prefix=arg.parent.prefix,
+                ),
+                Leaf(TOKEN.RBRACE, "}", prefix=arg.parent.get_suffix()),
+            ],
+            prefix=node.prefix,
+        )
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Converts x-unit style tests to be pytest-style where possible."
@@ -210,6 +236,30 @@ def main():
             )
         )
         .modify(callback=make_dict_comprehension)
+        # set([a for a in x])
+        # set((a for a in x))
+        # set(a for a in x)
+        # --> {a for a in x}
+        #
+        # TODO
+        # set([x, y, z])
+        # set((x, y, z))
+        # --> {x, y, z}
+        .select(
+            """
+            power< "set" trailer< '(' (
+                atom< "[" listmaker< arg=any {forloop} > "]" >
+                | argument< arg=any {forloop} >
+                | atom< "(" testlist_gexp< arg=any {forloop} > ")" >
+            ) ')' > >
+            """.format(
+                forloop='''forloop=(
+                    old_comp_for< any* "in" any [ ifpart=old_comp_if< any* > ] >
+                    | comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
+                )'''
+            )
+        )
+        .modify(callback=make_set_comprehension)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
