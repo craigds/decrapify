@@ -38,7 +38,7 @@ r"the 'r' should be preserved in this {string}".format(string=string)
 b"this kind of {string} shouldn't become an f-string".format(string=string)
 
 
-# xunit_to_pytest.py
+# pytestify.py
 
 class Foo(unittest.TestCase):
     # This won't be modified
@@ -105,6 +105,11 @@ class Foo(unittest.TestCase):
             ,
         )
 
+        self.assertIn(x, y)
+        self.assertNotIn(x, y)
+
+        self.assertEqual((a, b, c), (d, e, f))
+
     def test_asserttrue(self):
         # ignored
         self.assertTrue()
@@ -122,3 +127,34 @@ class Foo(unittest.TestCase):
         self.failIf(a)
         self.failUnless(a)
         self.assert_(a)
+
+
+# obvious_cleanup.py
+
+# left alone
+a == b
+a != b
+
+# modified
+not a == b
+not a != b
+not a is not b
+not a < b
+not a > b
+not a <= b
+not a >= b
+not a is not b
+not a is b
+
+a == None
+a != None
+
+dict([(a, b) for a, b in x])
+dict((a, b) for a, b in x)
+dict(((a, b) for a, b in x))
+{a: b for a, b in x}
+
+dict([(a, b) for a, b in x if y])
+dict((a, b) for a, b in x if y)
+dict(((a, b) for a, b in x if y))
+{a: b for a, b in x if y}
