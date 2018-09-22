@@ -101,7 +101,7 @@ def make_dict_comprehension(node, capture, arguments):
         >>> print(a)
         5
     """
-
+    kv = capture['kv']
     key = capture['k']
     value = capture['v']
     forloop = capture['forloop'][0]
@@ -124,8 +124,9 @@ def make_dict_comprehension(node, capture, arguments):
                         value.clone(),
                         forloop.clone(),
                     ],
+                    prefix=kv.parent.prefix,
                 ),
-                Leaf(TOKEN.RBRACE, "}"),
+                Leaf(TOKEN.RBRACE, "}", prefix=kv.parent.get_suffix()),
             ],
             prefix=node.prefix,
         )
@@ -204,7 +205,7 @@ def main():
                     | comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
                 )''',
                 kv='''
-                    atom< "(" testlist_gexp< k=any "," v=any > ")" >
+                    kv=atom< "(" testlist_gexp< k=any "," v=any > ")" >
                 ''',
             )
         )

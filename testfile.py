@@ -158,3 +158,17 @@ dict([(a, b) for a, b in x if y])
 dict((a, b) for a, b in x if y)
 dict(((a, b) for a, b in x if y))
 {a: b for a, b in x if y}
+
+dict([
+    (a, b)
+    for a, b in x
+])
+dict(
+    (a, b) for a, b
+    in x
+)
+dict(
+    (
+        (a, b) for a, b in x
+    )
+)
