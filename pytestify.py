@@ -4,6 +4,13 @@ A sample pybowler pipeline that demonstrates replacement of
 x-unit style tests with pytest-style ones.
 
 Not particularly thorough.
+
+For simplicity, doesn't really handle boolean/None values well:
+
+    assertEqual(a, None)
+        --> a == None
+    assertEqual(a, False)
+        --> a == False
 """
 
 import argparse
@@ -20,14 +27,81 @@ from bowler.types import Leaf, Node, STARS
 flags = {}
 
 
+# NOTE: these don't take inversions into account.
+# Hence why assertNotEqual is a synonym of assertEqual
+SYNONYMS = {
+    'assertEquals': 'assertEqual',
+    'failUnlessEqual': 'assertEqual',
+    'assertNotEqual': 'assertEqual',
+    'failIfEqual': 'assertEqual',
+    'assertIsNot': 'assertIs',
+    'assertNotIn': 'assertIn',
+    'failUnless': 'assertTrue',
+    'assert_': 'assertTrue',
+    'assertFalse': 'assertTrue',
+    'failIf': 'assertTrue',
+    'assertIsNotNone': 'assertIsNone',
+
+    'assertMultiLineEqual': 'assertEqual',
+    'assertSequenceEqual': 'assertEqual',
+    'assertListEqual': 'assertEqual',
+    'assertTupleEqual': 'assertEqual',
+    'assertSetEqual': 'assertEqual',
+    'assertDictEqual': 'assertEqual',
+}
+
+
+ARGUMENTS = {
+    'assertEqual': 2,
+    'assertIs': 2,
+    'assertIn': 2,
+    'assertGreater': 2,
+    'assertLess': 2,
+    'assertGreaterEqual': 2,
+    'assertLessEqual': 2,
+    # TODO: assertIsInstance(a, b)
+    # TODO: assertRaises()
+    # TODO: assertAlmostEqual()
+    'assertTrue': 1,
+    'assertIsNone': 1,
+}
+
+
 OPERATORS = {
     'assertEqual': Leaf(TOKEN.EQEQUAL, '==', prefix=' '),
-    'assertEquals': Leaf(TOKEN.EQEQUAL, '==', prefix=' '),
-    'failUnlessEqual': Leaf(TOKEN.EQEQUAL, '==', prefix=' '),
-    'assertNotEqual': Leaf(TOKEN.NOTEQUAL, '!=', prefix=' '),
-    'failIfEqual': Leaf(TOKEN.NOTEQUAL, '!=', prefix=' '),
+    'assertIs': Leaf(TOKEN.NAME, 'is', prefix=' '),
+    'assertIn': Leaf(TOKEN.NAME, 'in', prefix=' '),
+    # TODO: assertIsInstance(a, b)
+    'assertTrue': [],
+    'assertIsNone': [
+        Leaf(TOKEN.NAME, 'is', prefix=' '),
+        Leaf(TOKEN.NAME, 'None', prefix=' '),
+    ],
+    'assertGreater': Leaf(TOKEN.GREATER, '>', prefix=' '),
+    'assertLess': Leaf(TOKEN.LESS, '<', prefix=' '),
+    'assertGreaterEqual': Leaf(TOKEN.GREATEREQUAL, '>=', prefix=' '),
+    'assertLessEqual': Leaf(TOKEN.LESSEQUAL, '<=', prefix=' '),
+}
+
+# Functions where we invert the operator, or add a 'not'
+INVERT_FUNCTIONS = {
+    'assertNotEqual',
+    'failIfEqual',
+    'assertIsNot',
+    'assertNotIn',
+    'assertFalse',
+    'failIf',
+    'assertIsNotNone',
 }
 BOOLEAN_VALUES = ('True', 'False')
+
+
+def kw(name, **kwargs):
+    """
+    A helper to produce keyword nodes
+    """
+    kwargs.setdefault('prefix', ' ')
+    return Leaf(TOKEN.NAME, name, **kwargs)
 
 
 # TODO : Add this to fissix.fixer_util
@@ -45,7 +119,7 @@ def Assert(test, message=None, **kwargs):
     return Node(
         syms.assert_stmt,
         [Leaf(TOKEN.NAME, 'assert')] + test + (message or []),
-        **kwargs
+        **kwargs,
     )
 
 
@@ -75,6 +149,7 @@ def conversion(func):
     """
     Decorator. Handle some boilerplate
     """
+
     @wraps(func)
     def wrapper(node, capture, filename):
         if flags['debug']:
@@ -95,16 +170,11 @@ def conversion(func):
         if arguments_node.type == syms.arglist:
             # multiple arguments
             actual_arguments = [
-                n
-                for n in arguments_node.children
-                if n.type != TOKEN.COMMA
+                n for n in arguments_node.children if n.type != TOKEN.COMMA
             ]
-        elif arguments_node.type == syms.comparison:
+        else:
             # one argument
             actual_arguments = [arguments_node]
-        else:
-            # self.assertTrue(*args) perhaps. Can't do much with this really.
-            return
 
         assertion = func(node, capture, actual_arguments)
 
@@ -116,138 +186,83 @@ def conversion(func):
 
             node.replace(assertion)
             return assertion
+
     return wrapper
 
 
 @conversion
-def assertequal_to_assert(node, capture, arguments):
+def assertmethod_to_assert(node, capture, arguments):
     """
     self.assertEqual(foo, bar, msg)
     --> assert foo == bar, msg
 
-    self.assertNotEqual(foo, bar, msg)
-    --> assert foo != bar, msg
-    """
-    if len(arguments) not in (2, 3):
-        # Not sure what this is. Leave it alone.
-        return None
-
-    a, b, *rest = arguments
-    message = None
-    if rest:
-        message = rest[0]
-        if message.type == syms.argument:
-            # keyword argument (e.g. `msg=abc`)
-            message = message.children[2]
-
-    # Figure out the appropriate operator
-    function_name = capture['function_name']
-    op_token = OPERATORS[function_name.value]
-
-    # Un-multi-line, where a and b are on separate lines
-    b = b.clone()
-    b.prefix = ' '
-
-    if flags.get('skip_multiline_expressions'):
-        if is_multiline(a) or is_multiline(b) or (message and is_multiline(message)):
-            return
-    else:
-        # Avoid creating syntax errors for multi-line nodes
-        # (this is overly restrictive, but better than overly lax)
-        # https://github.com/facebookincubator/Bowler/issues/12
-        a = parenthesize_if_necessary(a)
-        b = parenthesize_if_necessary(b)
-        if message:
-            message = parenthesize_if_necessary(message)
-
-    assert_test_nodes = [a.clone(), op_token.clone(), b]
-
-    # Handle some special cases
-    if getattr(a, 'value', None) in BOOLEAN_VALUES or getattr(b, 'value', None) in BOOLEAN_VALUES:
-        # use `assert a` instead of `assert a == True` etc
-        if getattr(a, 'value') in BOOLEAN_VALUES:
-            bool_, tok = a, b
-        else:
-            tok, bool_ = a, b
-
-        # handle negatives and double negatives:
-        # assertNotEqual(x, False) --> assert x`
-        invert = bool_.value == 'False'
-        if op_token.type == TOKEN.NOTEQUAL:
-            invert = not invert
-        tok = tok.clone()
-        tok.prefix = ' '
-        if invert:
-            assert_test_nodes = [Leaf(TOKEN.NAME, 'not'), tok]
-        else:
-            assert_test_nodes = [tok]
-
-    elif getattr(a, 'value', None) == 'None' or getattr(b, 'value', None) == 'None':
-        # use `assert a is None` instead of `assert a == None` etc
-        if getattr(a, 'value') == 'None':
-            none_, tok = a, b
-        else:
-            tok, none_ = a, b
-
-        none_ = none_.clone()
-        none_.prefix = ' '
-
-        assert_test_nodes = [tok.clone(), Leaf(TOKEN.NAME, 'is', prefix=' '), none_]
-        if op_token.type == TOKEN.NOTEQUAL:
-            assert_test_nodes.insert(-1, Leaf(TOKEN.NAME, 'not', prefix=' '))
-
-    return Assert(
-        assert_test_nodes,
-        message.clone() if message else None,
-        prefix=node.prefix,
-    )
-
-
-@conversion
-def asserttrue_to_assert(node, capture, arguments):
-    """
     self.assertTrue(foo, msg)
     --> assert foo, msg
 
-    self.assertFalse(foo, msg)
-    --> assert not foo, msg
+    self.assertIsNotNone(foo, msg)
+    --> assert foo is not None, msg
+
+    .. etc
     """
-    if len(arguments) not in (1, 2):
+    function_name = capture['function_name'].value
+    invert = function_name in INVERT_FUNCTIONS
+    function_name = SYNONYMS.get(function_name, function_name)
+    num_arguments = ARGUMENTS[function_name]
+
+    if len(arguments) not in (num_arguments, num_arguments + 1):
         # Not sure what this is. Leave it alone.
         return None
 
-    a = arguments[0]
-    message = None
-    if len(arguments) > 1:
-        message = arguments[1]
+    # Un-multi-line, where a and b are on separate lines
+    arguments = [a.clone() for a in arguments]
+    for a in arguments:
+        a.prefix = ' '
+
+        if flags.get('skip_multiline_expressions'):
+            if is_multiline(a):
+                return
+
+    # Avoid creating syntax errors for multi-line nodes
+    # (this is overly restrictive, but better than overly lax)
+    # https://github.com/facebookincubator/Bowler/issues/12
+    arguments = [parenthesize_if_necessary(a) for a in arguments]
+
+    if len(arguments) == num_arguments:
+        message = None
+    else:
+        message = arguments.pop()
         if message.type == syms.argument:
             # keyword argument (e.g. `msg=abc`)
-            message = message.children[2]
+            message = message.children[2].clone()
 
-    a = a.clone()
-    a.prefix = ' '
+    op_tokens = OPERATORS[function_name]
+    if not isinstance(op_tokens, list):
+        op_tokens = [op_tokens]
+    op_tokens = [o.clone() for o in op_tokens]
+    print("op tokens:", op_tokens)
 
-    if flags.get('skip_multiline_expressions'):
-        if is_multiline(a) or (message and is_multiline(message)):
-            return
-    else:
-        # Avoid creating syntax errors for multi-line nodes
-        # (this is overly restrictive, but better than overly lax)
-        # https://github.com/facebookincubator/Bowler/issues/12
-        a = parenthesize_if_necessary(a)
-        if message:
-            message = parenthesize_if_necessary(message)
+    if invert:
+        if not op_tokens:
+            op_tokens.append(kw('not'))
+        elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == 'is':
+            op_tokens[0] = Node(syms.comp_op, [kw('is'), kw('not')], prefix=' ')
+        elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == 'in':
+            op_tokens[0] = Node(syms.comp_op, [kw('not'), kw('in')], prefix=' ')
+        elif op_tokens[0].type == TOKEN.EQEQUAL:
+            op_tokens[0] = Leaf(TOKEN.NOTEQUAL, '!=', prefix=' ')
 
-    function_name = capture['function_name']
-    if function_name in ('failIf', 'assertFalse'):
-        assert_test_nodes = [Leaf(TOKEN.NAME, 'not'), a]
-    else:
-        assert_test_nodes = [a]
+    if num_arguments == 2:
+        # a != b, etc.
+        assert_test_nodes = [arguments[0]] + op_tokens + [arguments[1]]
+    elif function_name == 'assertTrue':
+        assert_test_nodes = op_tokens + [arguments[0]]
+        # not a
+    elif function_name == 'assertIsNone':
+        # a is not None
+        assert_test_nodes = [arguments[0]] + op_tokens
 
     return Assert(
-        assert_test_nodes,
-        message.clone() if message else None,
-        prefix=node.prefix,
+        assert_test_nodes, message.clone() if message else None, prefix=node.prefix
     )
 
 
@@ -260,21 +275,21 @@ def main():
         dest='interactive',
         default=True,
         action='store_false',
-        help="Non-interactive mode"
+        help="Non-interactive mode",
     )
     parser.add_argument(
         '--no-write',
         dest='write',
         default=True,
         action='store_false',
-        help="Don't write the changes to the source file, just output a diff to stdout"
+        help="Don't write the changes to the source file, just output a diff to stdout",
     )
     parser.add_argument(
         '--debug',
         dest='debug',
         default=False,
         action='store_true',
-        help="Spit out debugging information"
+        help="Spit out debugging information",
     )
     parser.add_argument(
         '--skip-multiline-expressions',
@@ -283,12 +298,10 @@ def main():
         help=(
             "Skip handling lines that contain multiline expressions. "
             "The code isn't yet able to handle them well. Output is valid but not pretty"
-        )
+        ),
     )
     parser.add_argument(
-        'files',
-        nargs='+',
-        help="The python source file(s) to operate on."
+        'files', nargs='+', help="The python source file(s) to operate on."
     )
     args = parser.parse_args()
 
@@ -299,23 +312,48 @@ def main():
     query = (
         # Look for files in the current working directory
         Query(*args.files)
-
         # NOTE: You can append as many .select().modify() bits as you want to one query.
         # Each .modify() acts only on the .select[_*]() immediately prior.
-
-        .select_method('assertEqual').modify(callback=assertequal_to_assert)
-        .select_method('assertEquals').modify(callback=assertequal_to_assert)
-        .select_method('failUnlessEqual').modify(callback=assertequal_to_assert)
-
-        .select_method('assertNotEqual').modify(callback=assertequal_to_assert)
-        .select_method('failIfEqual').modify(callback=assertequal_to_assert)
-
-        .select_method('assertTrue').modify(callback=asserttrue_to_assert)
-        .select_method('assert_').modify(callback=asserttrue_to_assert)
-        .select_method('failUnless').modify(callback=asserttrue_to_assert)
-
-        .select_method('assertFalse').modify(callback=asserttrue_to_assert)
-        .select_method('failIf').modify(callback=asserttrue_to_assert)
+        .select_method('assertEqual')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertEquals')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('failUnlessEqual')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertNotEqual')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('failIfEqual')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertIs')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertIsNot')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertIn')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertNotIn')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertTrue')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assert_')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('failUnless')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertFalse')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('failIf')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertIsNone')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertIsNotNone')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertGreater')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertGreaterEqual')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertLess')
+        .modify(callback=assertmethod_to_assert)
+        .select_method('assertLessEqual')
+        .modify(callback=assertmethod_to_assert)
 
         # Actually run all of the above.
         .execute(
