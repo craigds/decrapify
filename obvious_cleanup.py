@@ -2,10 +2,17 @@
 """
 Cleans up simple obvious messy stuff:
 
-assert not a == b
---> assert a != b
+    not a == b
+    --> a != b
 
-Not particularly thorough.
+    a == None
+    --> a is None
+
+    dict([(k, v) for k, v in x])
+    --> {k: v for k, v in x}
+
+    set([a for a in x])
+    --> {a for a in x}
 """
 
 import argparse
