@@ -110,6 +110,9 @@ class Foo(unittest.TestCase):
 
         self.assertEqual((a, b, c), (d, e, f))
 
+        self.assertIsInstance(a, b, msg)
+        self.assertNotIsInstance(a, b, msg)
+
     def test_asserttrue(self):
         # ignored
         self.assertTrue()

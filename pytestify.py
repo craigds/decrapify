@@ -18,7 +18,7 @@ import re
 import sys
 from functools import wraps
 
-from fissix.fixer_util import parenthesize
+from fissix.fixer_util import parenthesize, Call, Comma
 from fissix.pygram import python_symbols as syms
 
 from bowler import Query, TOKEN, SYMBOL
@@ -30,77 +30,78 @@ flags = {}
 # NOTE: these don't take inversions into account.
 # Hence why assertNotEqual is a synonym of assertEqual
 SYNONYMS = {
-    'assertEquals': 'assertEqual',
-    'failUnlessEqual': 'assertEqual',
-    'assertNotEqual': 'assertEqual',
-    'failIfEqual': 'assertEqual',
-    'assertIsNot': 'assertIs',
-    'assertNotIn': 'assertIn',
-    'failUnless': 'assertTrue',
-    'assert_': 'assertTrue',
-    'assertFalse': 'assertTrue',
-    'failIf': 'assertTrue',
-    'assertIsNotNone': 'assertIsNone',
-
-    'assertMultiLineEqual': 'assertEqual',
-    'assertSequenceEqual': 'assertEqual',
-    'assertListEqual': 'assertEqual',
-    'assertTupleEqual': 'assertEqual',
-    'assertSetEqual': 'assertEqual',
-    'assertDictEqual': 'assertEqual',
+    "assertEquals": "assertEqual",
+    "failUnlessEqual": "assertEqual",
+    "assertNotEqual": "assertEqual",
+    "failIfEqual": "assertEqual",
+    "assertIsNot": "assertIs",
+    "assertNotIn": "assertIn",
+    "failUnless": "assertTrue",
+    "assert_": "assertTrue",
+    "assertFalse": "assertTrue",
+    "failIf": "assertTrue",
+    "assertIsNotNone": "assertIsNone",
+    "assertMultiLineEqual": "assertEqual",
+    "assertSequenceEqual": "assertEqual",
+    "assertListEqual": "assertEqual",
+    "assertTupleEqual": "assertEqual",
+    "assertSetEqual": "assertEqual",
+    "assertDictEqual": "assertEqual",
+    "assertNotIsInstance": "assertIsInstance",
 }
 
 
 ARGUMENTS = {
-    'assertEqual': 2,
-    'assertIs': 2,
-    'assertIn': 2,
-    'assertGreater': 2,
-    'assertLess': 2,
-    'assertGreaterEqual': 2,
-    'assertLessEqual': 2,
-    # TODO: assertIsInstance(a, b)
+    "assertEqual": 2,
+    "assertIs": 2,
+    "assertIn": 2,
+    "assertGreater": 2,
+    "assertLess": 2,
+    "assertGreaterEqual": 2,
+    "assertLessEqual": 2,
+    "assertIsInstance": 2,
     # TODO: assertRaises()
     # TODO: assertAlmostEqual()
-    'assertTrue': 1,
-    'assertIsNone': 1,
+    "assertTrue": 1,
+    "assertIsNone": 1,
 }
 
 
 OPERATORS = {
-    'assertEqual': Leaf(TOKEN.EQEQUAL, '==', prefix=' '),
-    'assertIs': Leaf(TOKEN.NAME, 'is', prefix=' '),
-    'assertIn': Leaf(TOKEN.NAME, 'in', prefix=' '),
-    # TODO: assertIsInstance(a, b)
-    'assertTrue': [],
-    'assertIsNone': [
-        Leaf(TOKEN.NAME, 'is', prefix=' '),
-        Leaf(TOKEN.NAME, 'None', prefix=' '),
+    "assertEqual": Leaf(TOKEN.EQEQUAL, "==", prefix=" "),
+    "assertIs": Leaf(TOKEN.NAME, "is", prefix=" "),
+    "assertIn": Leaf(TOKEN.NAME, "in", prefix=" "),
+    "assertTrue": [],
+    "assertIsNone": [
+        Leaf(TOKEN.NAME, "is", prefix=" "),
+        Leaf(TOKEN.NAME, "None", prefix=" "),
     ],
-    'assertGreater': Leaf(TOKEN.GREATER, '>', prefix=' '),
-    'assertLess': Leaf(TOKEN.LESS, '<', prefix=' '),
-    'assertGreaterEqual': Leaf(TOKEN.GREATEREQUAL, '>=', prefix=' '),
-    'assertLessEqual': Leaf(TOKEN.LESSEQUAL, '<=', prefix=' '),
+    "assertGreater": Leaf(TOKEN.GREATER, ">", prefix=" "),
+    "assertLess": Leaf(TOKEN.LESS, "<", prefix=" "),
+    "assertGreaterEqual": Leaf(TOKEN.GREATEREQUAL, ">=", prefix=" "),
+    "assertLessEqual": Leaf(TOKEN.LESSEQUAL, "<=", prefix=" "),
 }
+
 
 # Functions where we invert the operator, or add a 'not'
 INVERT_FUNCTIONS = {
-    'assertNotEqual',
-    'failIfEqual',
-    'assertIsNot',
-    'assertNotIn',
-    'assertFalse',
-    'failIf',
-    'assertIsNotNone',
+    "assertNotEqual",
+    "failIfEqual",
+    "assertIsNot",
+    "assertNotIn",
+    "assertFalse",
+    "failIf",
+    "assertIsNotNone",
+    "assertNotIsInstance",
 }
-BOOLEAN_VALUES = ('True', 'False')
+BOOLEAN_VALUES = ("True", "False")
 
 
 def kw(name, **kwargs):
     """
     A helper to produce keyword nodes
     """
-    kwargs.setdefault('prefix', ' ')
+    kwargs.setdefault("prefix", " ")
     return Leaf(TOKEN.NAME, name, **kwargs)
 
 
@@ -109,16 +110,16 @@ def Assert(test, message=None, **kwargs):
     """Build an assertion statement"""
     if not isinstance(test, list):
         test = [test]
-    test[0].prefix = ' '
+    test[0].prefix = " "
     if message is not None:
         if not isinstance(message, list):
             message = [message]
-        message.insert(0, Leaf(TOKEN.COMMA, ','))
-        message[1].prefix = ' '
+        message.insert(0, Comma())
+        message[1].prefix = " "
 
     return Node(
         syms.assert_stmt,
-        [Leaf(TOKEN.NAME, 'assert')] + test + (message or []),
+        [Leaf(TOKEN.NAME, "assert")] + test + (message or []),
         **kwargs,
     )
 
@@ -128,7 +129,7 @@ def is_multiline(node):
         return any(is_multiline(n) for n in node)
 
     for leaf in node.leaves():
-        if '\n' in leaf.prefix:
+        if "\n" in leaf.prefix:
             return True
     return False
 
@@ -152,15 +153,15 @@ def conversion(func):
 
     @wraps(func)
     def wrapper(node, capture, filename):
-        if flags['debug']:
+        if flags["debug"]:
             print("Selected expression: ", list(node.children))
 
-        if capture.get('function_def'):
+        if capture.get("function_def"):
             # Not interested in `def assertEqual`, leave that alone.
             # We only care about *calls*
             return node
 
-        arguments_nodes = capture['function_arguments']
+        arguments_nodes = capture["function_arguments"]
         if not arguments_nodes:
             return node
 
@@ -179,7 +180,7 @@ def conversion(func):
         assertion = func(node, capture, actual_arguments)
 
         if assertion is not None:
-            if flags['debug']:
+            if flags["debug"]:
                 print(f"Replacing:\n\t{node}")
                 print(f"With: {assertion}")
                 print()
@@ -204,7 +205,7 @@ def assertmethod_to_assert(node, capture, arguments):
 
     .. etc
     """
-    function_name = capture['function_name'].value
+    function_name = capture["function_name"].value
     invert = function_name in INVERT_FUNCTIONS
     function_name = SYNONYMS.get(function_name, function_name)
     num_arguments = ARGUMENTS[function_name]
@@ -216,9 +217,9 @@ def assertmethod_to_assert(node, capture, arguments):
     # Un-multi-line, where a and b are on separate lines
     arguments = [a.clone() for a in arguments]
     for a in arguments:
-        a.prefix = ' '
+        a.prefix = " "
 
-        if flags.get('skip_multiline_expressions'):
+        if flags.get("skip_multiline_expressions"):
             if is_multiline(a):
                 return
 
@@ -235,31 +236,39 @@ def assertmethod_to_assert(node, capture, arguments):
             # keyword argument (e.g. `msg=abc`)
             message = message.children[2].clone()
 
-    op_tokens = OPERATORS[function_name]
-    if not isinstance(op_tokens, list):
-        op_tokens = [op_tokens]
-    op_tokens = [o.clone() for o in op_tokens]
-    print("op tokens:", op_tokens)
+    if function_name == "assertIsInstance":
+        print("args", arguments)
+        arguments[0].prefix = ""
+        assert_test_nodes = [
+            Call(kw("isinstance"), [arguments[0], Comma(), arguments[1]])
+        ]
+        if invert:
+            assert_test_nodes.insert(0, kw("not"))
+    else:
+        op_tokens = OPERATORS[function_name]
+        if not isinstance(op_tokens, list):
+            op_tokens = [op_tokens]
+        op_tokens = [o.clone() for o in op_tokens]
 
-    if invert:
-        if not op_tokens:
-            op_tokens.append(kw('not'))
-        elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == 'is':
-            op_tokens[0] = Node(syms.comp_op, [kw('is'), kw('not')], prefix=' ')
-        elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == 'in':
-            op_tokens[0] = Node(syms.comp_op, [kw('not'), kw('in')], prefix=' ')
-        elif op_tokens[0].type == TOKEN.EQEQUAL:
-            op_tokens[0] = Leaf(TOKEN.NOTEQUAL, '!=', prefix=' ')
+        if invert:
+            if not op_tokens:
+                op_tokens.append(kw("not"))
+            elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == "is":
+                op_tokens[0] = Node(syms.comp_op, [kw("is"), kw("not")], prefix=" ")
+            elif op_tokens[0].type == TOKEN.NAME and op_tokens[0].value == "in":
+                op_tokens[0] = Node(syms.comp_op, [kw("not"), kw("in")], prefix=" ")
+            elif op_tokens[0].type == TOKEN.EQEQUAL:
+                op_tokens[0] = Leaf(TOKEN.NOTEQUAL, "!=", prefix=" ")
 
-    if num_arguments == 2:
-        # a != b, etc.
-        assert_test_nodes = [arguments[0]] + op_tokens + [arguments[1]]
-    elif function_name == 'assertTrue':
-        assert_test_nodes = op_tokens + [arguments[0]]
-        # not a
-    elif function_name == 'assertIsNone':
-        # a is not None
-        assert_test_nodes = [arguments[0]] + op_tokens
+        if num_arguments == 2:
+            # a != b, etc.
+            assert_test_nodes = [arguments[0]] + op_tokens + [arguments[1]]
+        elif function_name == "assertTrue":
+            assert_test_nodes = op_tokens + [arguments[0]]
+            # not a
+        elif function_name == "assertIsNone":
+            # a is not None
+            assert_test_nodes = [arguments[0]] + op_tokens
 
     return Assert(
         assert_test_nodes, message.clone() if message else None, prefix=node.prefix
@@ -271,90 +280,93 @@ def main():
         description="Converts x-unit style tests to be pytest-style where possible."
     )
     parser.add_argument(
-        '--no-input',
-        dest='interactive',
+        "--no-input",
+        dest="interactive",
         default=True,
-        action='store_false',
+        action="store_false",
         help="Non-interactive mode",
     )
     parser.add_argument(
-        '--no-write',
-        dest='write',
+        "--no-write",
+        dest="write",
         default=True,
-        action='store_false',
+        action="store_false",
         help="Don't write the changes to the source file, just output a diff to stdout",
     )
     parser.add_argument(
-        '--debug',
-        dest='debug',
+        "--debug",
+        dest="debug",
         default=False,
-        action='store_true',
+        action="store_true",
         help="Spit out debugging information",
     )
     parser.add_argument(
-        '--skip-multiline-expressions',
+        "--skip-multiline-expressions",
         default=False,
-        action='store_true',
+        action="store_true",
         help=(
             "Skip handling lines that contain multiline expressions. "
             "The code isn't yet able to handle them well. Output is valid but not pretty"
         ),
     )
     parser.add_argument(
-        'files', nargs='+', help="The python source file(s) to operate on."
+        "files", nargs="+", help="The python source file(s) to operate on."
     )
     args = parser.parse_args()
 
     # No way to pass this to .modify() callables, so we just set it at module level
-    flags['debug'] = args.debug
-    flags['skip_multiline_expressions'] = args.skip_multiline_expressions
+    flags["debug"] = args.debug
+    flags["skip_multiline_expressions"] = args.skip_multiline_expressions
 
     query = (
         # Look for files in the current working directory
         Query(*args.files)
         # NOTE: You can append as many .select().modify() bits as you want to one query.
         # Each .modify() acts only on the .select[_*]() immediately prior.
-        .select_method('assertEqual')
+        .select_method("assertEqual")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertEquals')
+        .select_method("assertEquals")
         .modify(callback=assertmethod_to_assert)
-        .select_method('failUnlessEqual')
+        .select_method("failUnlessEqual")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertNotEqual')
+        .select_method("assertNotEqual")
         .modify(callback=assertmethod_to_assert)
-        .select_method('failIfEqual')
+        .select_method("failIfEqual")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertIs')
+        .select_method("assertIs")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertIsNot')
+        .select_method("assertIsNot")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertIn')
+        .select_method("assertIn")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertNotIn')
+        .select_method("assertNotIn")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertTrue')
+        .select_method("assertTrue")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assert_')
+        .select_method("assert_")
         .modify(callback=assertmethod_to_assert)
-        .select_method('failUnless')
+        .select_method("failUnless")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertFalse')
+        .select_method("assertFalse")
         .modify(callback=assertmethod_to_assert)
-        .select_method('failIf')
+        .select_method("failIf")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertIsNone')
+        .select_method("assertIsNone")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertIsNotNone')
+        .select_method("assertIsNotNone")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertGreater')
+        .select_method("assertGreater")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertGreaterEqual')
+        .select_method("assertGreaterEqual")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertLess')
+        .select_method("assertLess")
         .modify(callback=assertmethod_to_assert)
-        .select_method('assertLessEqual')
+        .select_method("assertLessEqual")
         .modify(callback=assertmethod_to_assert)
-
+        .select_method("assertIsInstance")
+        .modify(callback=assertmethod_to_assert)
+        .select_method("assertNotIsInstance")
+        .modify(callback=assertmethod_to_assert)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
@@ -364,5 +376,5 @@ def main():
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
