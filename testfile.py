@@ -113,6 +113,9 @@ class Foo(unittest.TestCase):
         self.assertIsInstance(a, b, msg)
         self.assertNotIsInstance(a, b, msg)
 
+        self.assertAlmostEqual(a, b)
+        self.assertNotAlmostEqual(a, b)
+
     def test_asserttrue(self):
         # ignored
         self.assertTrue()

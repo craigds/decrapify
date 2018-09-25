@@ -14,15 +14,13 @@ For simplicity, doesn't really handle boolean/None values well:
 """
 
 import argparse
-import re
-import sys
 from functools import wraps
 
-from fissix.fixer_util import parenthesize, Call, Comma
+from fissix.fixer_util import parenthesize, Call, Comma, Attr, KeywordArg, ArgList, touch_import
 from fissix.pygram import python_symbols as syms
 
-from bowler import Query, TOKEN, SYMBOL
-from bowler.types import Leaf, Node, STARS
+from bowler import Query, TOKEN
+from bowler.types import Leaf, Node
 
 flags = {}
 
@@ -48,6 +46,7 @@ SYNONYMS = {
     "assertSetEqual": "assertEqual",
     "assertDictEqual": "assertEqual",
     "assertNotIsInstance": "assertIsInstance",
+    "assertNotAlmostEqual": "assertAlmostEqual",
 }
 
 
@@ -61,7 +60,7 @@ ARGUMENTS = {
     "assertLessEqual": 2,
     "assertIsInstance": 2,
     # TODO: assertRaises()
-    # TODO: assertAlmostEqual()
+    "assertAlmostEqual": 2,
     "assertTrue": 1,
     "assertIsNone": 1,
 }
@@ -93,6 +92,7 @@ INVERT_FUNCTIONS = {
     "failIf",
     "assertIsNotNone",
     "assertNotIsInstance",
+    "assertNotAlmostEqual",
 }
 BOOLEAN_VALUES = ("True", "False")
 
@@ -237,13 +237,44 @@ def assertmethod_to_assert(node, capture, arguments):
             message = message.children[2].clone()
 
     if function_name == "assertIsInstance":
-        print("args", arguments)
         arguments[0].prefix = ""
         assert_test_nodes = [
             Call(kw("isinstance"), [arguments[0], Comma(), arguments[1]])
         ]
         if invert:
             assert_test_nodes.insert(0, kw("not"))
+    elif function_name == "assertAlmostEqual":
+        arguments[1].prefix = ""
+        # TODO: insert the `import pytest` at the top of the file
+        if invert:
+            op_token = Leaf(TOKEN.NOTEQUAL, "!=", prefix=" ")
+        else:
+            op_token = Leaf(TOKEN.EQEQUAL, "==", prefix=" ")
+        assert_test_nodes = [
+            Node(
+                syms.comparison,
+                [
+                    arguments[0],
+                    op_token,
+                    Node(
+                        syms.power,
+                        Attr(kw("pytest"), kw("approx", prefix=""))
+                        + [
+                            ArgList(
+                                [
+                                    arguments[1],
+                                    Comma(),
+                                    KeywordArg(kw("abs"), Leaf(TOKEN.NUMBER, "1e-7")),
+                                ]
+                            )
+                        ],
+                    ),
+                ],
+            )
+        ]
+        # Adds a 'import pytest' if there wasn't one already
+        touch_import(None, 'pytest', node)
+
     else:
         op_tokens = OPERATORS[function_name]
         if not isinstance(op_tokens, list):
@@ -366,6 +397,10 @@ def main():
         .select_method("assertIsInstance")
         .modify(callback=assertmethod_to_assert)
         .select_method("assertNotIsInstance")
+        .modify(callback=assertmethod_to_assert)
+        .select_method("assertAlmostEqual")
+        .modify(callback=assertmethod_to_assert)
+        .select_method("assertNotAlmostEqual")
         .modify(callback=assertmethod_to_assert)
         # Actually run all of the above.
         .execute(
