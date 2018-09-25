@@ -138,7 +138,7 @@ def parenthesize_if_necessary(node):
     if is_multiline(node):
         # If not already parenthesized, parenthesize
         for first_leaf in node.leaves():
-            if first_leaf.type == TOKEN.LPAR:
+            if first_leaf.type in (TOKEN.LPAR, TOKEN.LBRACE, TOKEN.LSQB):
                 # Already parenthesized
                 return node
             break
