@@ -16,7 +16,15 @@ For simplicity, doesn't really handle boolean/None values well:
 import argparse
 from functools import wraps
 
-from fissix.fixer_util import parenthesize, Call, Comma, Attr, KeywordArg, ArgList, touch_import
+from fissix.fixer_util import (
+    parenthesize,
+    Call,
+    Comma,
+    Attr,
+    KeywordArg,
+    ArgList,
+    touch_import,
+)
 from fissix.pygram import python_symbols as syms
 
 from bowler import Query, TOKEN
@@ -177,6 +185,20 @@ def conversion(func):
             # one argument
             actual_arguments = [arguments_node]
 
+        # Un-multi-line, where a and b are on separate lines
+        actual_arguments = [a.clone() for a in actual_arguments]
+        for a in actual_arguments:
+            a.prefix = " "
+
+            if flags.get("skip_multiline_expressions"):
+                if is_multiline(a):
+                    return
+
+        # Avoid creating syntax errors for multi-line nodes
+        # (this is overly restrictive, but better than overly lax)
+        # https://github.com/facebookincubator/Bowler/issues/12
+        actual_arguments = [parenthesize_if_necessary(a) for a in actual_arguments]
+
         assertion = func(node, capture, actual_arguments)
 
         if assertion is not None:
@@ -213,20 +235,6 @@ def assertmethod_to_assert(node, capture, arguments):
     if len(arguments) not in (num_arguments, num_arguments + 1):
         # Not sure what this is. Leave it alone.
         return None
-
-    # Un-multi-line, where a and b are on separate lines
-    arguments = [a.clone() for a in arguments]
-    for a in arguments:
-        a.prefix = " "
-
-        if flags.get("skip_multiline_expressions"):
-            if is_multiline(a):
-                return
-
-    # Avoid creating syntax errors for multi-line nodes
-    # (this is overly restrictive, but better than overly lax)
-    # https://github.com/facebookincubator/Bowler/issues/12
-    arguments = [parenthesize_if_necessary(a) for a in arguments]
 
     if len(arguments) == num_arguments:
         message = None
@@ -273,7 +281,7 @@ def assertmethod_to_assert(node, capture, arguments):
             )
         ]
         # Adds a 'import pytest' if there wasn't one already
-        touch_import(None, 'pytest', node)
+        touch_import(None, "pytest", node)
 
     else:
         op_tokens = OPERATORS[function_name]
@@ -304,6 +312,89 @@ def assertmethod_to_assert(node, capture, arguments):
     return Assert(
         assert_test_nodes, message.clone() if message else None, prefix=node.prefix
     )
+
+
+@conversion
+def assertalmostequal_to_assert(node, capture, arguments):
+    function_name = capture["function_name"].value
+    invert = function_name in INVERT_FUNCTIONS
+    function_name = SYNONYMS.get(function_name, function_name)
+
+    nargs = len(arguments)
+    if nargs < 2 or nargs > 5:
+        return None
+
+    def get_kwarg_value(index, name):
+        i = 0
+        for a in arguments:
+            if a.type == syms.argument:
+                if a.children[0].value == name:
+                    return a.children[2].clone()
+            else:
+                if i == index:
+                    return a.clone()
+                i += 1
+        return None
+
+    first = get_kwarg_value(0, "first")
+    second = get_kwarg_value(1, "second")
+
+    if first is None or second is None:
+        # Not sure what this is, leave it alone
+        return
+
+    places = get_kwarg_value(2, "places")
+    msg = get_kwarg_value(3, "msg")
+    delta = get_kwarg_value(4, "delta")
+
+    if delta is not None:
+        try:
+            abs_delta = float(delta.value)
+        except ValueError:
+            # this should be a number, give up.
+            return
+    else:
+        if places is None:
+            places = 7
+        else:
+            try:
+                places = int(places.value)
+            except (ValueError, AttributeError):
+                # this should be an int, give up.
+                return
+        abs_delta = "1e-%d" % places
+
+    arguments[1].prefix = ""
+    if invert:
+        op_token = Leaf(TOKEN.NOTEQUAL, "!=", prefix=" ")
+    else:
+        op_token = Leaf(TOKEN.EQEQUAL, "==", prefix=" ")
+    assert_test_nodes = [
+        Node(
+            syms.comparison,
+            [
+                arguments[0],
+                op_token,
+                Node(
+                    syms.power,
+                    Attr(kw("pytest"), kw("approx", prefix=""))
+                    + [
+                        ArgList(
+                            [
+                                arguments[1],
+                                Comma(),
+                                KeywordArg(kw("abs"), Leaf(TOKEN.NUMBER, abs_delta)),
+                            ]
+                        )
+                    ],
+                ),
+            ],
+        )
+    ]
+    # Adds a 'import pytest' if there wasn't one already
+    touch_import(None, "pytest", node)
+
+    return Assert(assert_test_nodes, msg.clone() if msg else None, prefix=node.prefix)
 
 
 def main():
@@ -399,9 +490,9 @@ def main():
         .select_method("assertNotIsInstance")
         .modify(callback=assertmethod_to_assert)
         .select_method("assertAlmostEqual")
-        .modify(callback=assertmethod_to_assert)
+        .modify(callback=assertalmostequal_to_assert)
         .select_method("assertNotAlmostEqual")
-        .modify(callback=assertmethod_to_assert)
+        .modify(callback=assertalmostequal_to_assert)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
