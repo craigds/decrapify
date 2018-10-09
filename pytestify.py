@@ -20,6 +20,7 @@ from fissix.fixer_util import (
     parenthesize,
     Call,
     Comma,
+    Dot,
     Attr,
     KeywordArg,
     ArgList,
@@ -397,6 +398,28 @@ def assertalmostequal_to_assert(node, capture, arguments):
     return Assert(assert_test_nodes, msg.clone() if msg else None, prefix=node.prefix)
 
 
+@conversion
+def handle_assertraises(node, capture, arguments):
+    """
+    with self.assertRaises(x):
+
+        --> with pytest.raises(x):
+
+    self.assertRaises(ValueError, func, arg1)
+
+        --> pytest.raises(ValueError, func, arg1)
+    """
+    capture['attr1'].replace(
+        kw('pytest', prefix=capture['attr1'].prefix)
+    )
+    capture['attr2'].replace(
+        Node(syms.trailer, [Dot(), kw('raises', prefix='')])
+    )
+
+    # Adds a 'import pytest' if there wasn't one already
+    touch_import(None, "pytest", node)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Converts x-unit style tests to be pytest-style where possible."
@@ -493,6 +516,13 @@ def main():
         .modify(callback=assertalmostequal_to_assert)
         .select_method("assertNotAlmostEqual")
         .modify(callback=assertalmostequal_to_assert)
+        .select("""
+            function_call=power<
+                attr1="self" attr2=trailer< "." "assertRaises" >
+                trailer< '(' function_arguments=any* ')' >
+            >
+        """)
+        .modify(callback=handle_assertraises)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)

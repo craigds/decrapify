@@ -195,3 +195,9 @@ set(
 set(
     a for a in x
 )
+
+def f():
+    self.assertRaises(foo, bar)
+
+    with self.assertRaises(x):
+        y()
