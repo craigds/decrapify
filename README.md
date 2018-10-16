@@ -29,8 +29,8 @@ This repo exists primarily as a learning exercise in concrete syntax trees. You 
 
 # Requirements
 
-Python 3.6+
-The other stuff in `requirements.txt`
+ * Python 3.6+
+ * The other stuff in `requirements.txt`
 
 # Future ideas?
 
