@@ -38,6 +38,12 @@ Some ideas I had which I haven't implemented yet:
 
  * convert `super(X,  self)` to `super()` (assuming X matches the class def)
  * remove obsolete `__future__` import statements (do any of the existing futurize/modernize tools do this? I couldn't find any)
+ * re-format/prettify docstrings in some circumstances. (black doesn't touch the contents of docstrings). Specifically I would probably:
+     - always use """triple-double-quotes"""
+     - always put both start and end quotes on their own line
+     - always match the indenation of the quotes to each other
+     - always use a raw string if the docstring contains a backslash
+     - always indent content to at least the same level as the starting quote marks.
 
 # Install
 
