@@ -23,7 +23,7 @@ f'{myvar} string literal'
 
 *Partially* converts your xunit-style tests to pytest ones. Doesn't get you all the way there, but reduces the effort required to manually finish the job.
 
-# Warning
+# :warning: Warning
 
 This repo exists primarily as a learning exercise in concrete syntax trees. You should exercise care if trying to using these scripts on code that is dear to you.
 
@@ -31,6 +31,13 @@ This repo exists primarily as a learning exercise in concrete syntax trees. You 
 
 Python 3.6+
 The other stuff in `requirements.txt`
+
+# Future ideas?
+
+Some ideas I had which I haven't implemented yet:
+
+ * convert `super(X,  self)` to `super()` (assuming X matches the class def)
+ * remove obsolete `__future__` import statements (do any of the existing futurize/modernize tools do this? I couldn't find any)
 
 # Install
 
