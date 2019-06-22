@@ -166,6 +166,21 @@ def make_set_comprehension(node, capture, arguments):
     )
 
 
+def remove_extra_parentheses(node, capture, arguments):
+    """
+    Removes unnecessary parentheses
+    """
+    node = capture['outer']
+    newnode = capture['inner']
+
+    if isinstance(newnode, list):
+        newnode = newnode[0]
+    newnode = newnode.clone()
+
+    newnode.prefix = node.prefix
+    node.replace(newnode)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Converts x-unit style tests to be pytest-style where possible."
@@ -267,6 +282,42 @@ def main():
             )
         )
         .modify(callback=make_set_comprehension)
+        # (a)
+        # --> a
+        # func((x for x in y))
+        # --> func(x for x in y)
+        .select(
+            """
+                (
+                    expr_stmt<
+                        any
+                        "="
+                        outer=atom<
+                            "("
+                            inner=any
+                            ")"
+                        >
+                    >
+                    |
+                    outer=atom<
+                        "("
+                        inner=(NAME | NUMBER | STRING | term | atom< "(" any ")" >)
+                        ")"
+                    >
+                    |
+                    any<
+                        "("
+                        outer=atom<
+                            "("
+                            inner=testlist_gexp
+                            ")"
+                        >
+                        ")"
+                    >
+                )
+            """
+        )
+        .modify(callback=remove_extra_parentheses)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
