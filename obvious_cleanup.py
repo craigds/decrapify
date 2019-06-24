@@ -259,8 +259,7 @@ def main():
             ) ')' > >
             """.format(
                 forloop='''forloop=(
-                    old_comp_for< any* "in" any [ ifpart=old_comp_if< any* > ] >
-                    | comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
+                    comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
                 )''',
                 kv='''
                     kv=atom< "(" testlist_gexp< k=any "," v=any > ")" >
@@ -286,8 +285,7 @@ def main():
             ) ')' > >
             """.format(
                 forloop='''forloop=(
-                    old_comp_for< any* "in" any [ ifpart=old_comp_if< any* > ] >
-                    | comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
+                    comp_for< any* "in" any [ ifpart=comp_if< any* > ] >
                 )'''
             )
         )
@@ -321,7 +319,7 @@ def main():
                             "("
                             inner=testlist_gexp<
                                 any
-                                old_comp_for
+                                comp_for
                             >
                             ")"
                         >

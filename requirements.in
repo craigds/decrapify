@@ -1,2 +1,2 @@
 pip-tools
-bowler>=0.5.1
+bowler>=0.8
