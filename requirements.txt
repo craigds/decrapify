@@ -5,11 +5,10 @@
 #    pip-compile --no-index --output-file requirements.txt requirements.in
 #
 appdirs==1.4.3            # via fissix
-attrs==18.1.0             # via bowler
-bowler==0.5.1
-click==6.7                # via bowler, pip-tools
-first==2.0.1              # via pip-tools
-fissix==18.6a6            # via bowler
-pip-tools==2.0.1
+attrs==19.1.0             # via bowler
+bowler==0.8.0
+click==7.0                # via bowler, pip-tools
+fissix==19.2b1            # via bowler
+pip-tools==3.8.0
 sh==1.12.14               # via bowler
-six==1.11.0               # via pip-tools
+six==1.12.0               # via pip-tools

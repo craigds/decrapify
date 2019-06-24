@@ -167,15 +167,25 @@ def make_set_comprehension(node, capture, arguments):
 
 
 def remove_extra_parentheses(node, capture, arguments):
-    """
-    Removes unnecessary parentheses
-    """
     node = capture['outer']
-    newnode = capture['inner']
+    inner = capture['inner']
 
-    if isinstance(newnode, list):
-        newnode = newnode[0]
-    newnode = newnode.clone()
+    if node.children[0].get_lineno() != node.children[2].get_lineno():
+        # don't touch parentheses on separate lines. they make a lot of
+        # things syntactically correct that otherwise wouldn't be.
+        return
+
+    if isinstance(inner, list):
+        inner = inner[0]
+    if capture.get('assignment_form') and inner.type == syms.testlist_gexp:
+        # a = (b,)
+        # a = (b, c)
+        # a = (b for c in d)
+        # removing the parentheses might be syntactically valid (in the first two forms)
+        # but it's not normal/best practice.
+        # so we don't.
+        return
+    newnode = inner.clone()
 
     newnode.prefix = node.prefix
     node.replace(newnode)
@@ -289,7 +299,7 @@ def main():
         .select(
             """
                 (
-                    expr_stmt<
+                    assignment_form=expr_stmt<
                         any
                         "="
                         outer=atom<
@@ -301,7 +311,7 @@ def main():
                     |
                     outer=atom<
                         "("
-                        inner=(NAME | NUMBER | STRING | term | atom< "(" any ")" >)
+                        inner=(NAME | NUMBER | STRING | factor | atom< "(" any ")" >)
                         ")"
                     >
                     |
@@ -309,7 +319,10 @@ def main():
                         "("
                         outer=atom<
                             "("
-                            inner=testlist_gexp
+                            inner=testlist_gexp<
+                                any
+                                old_comp_for
+                            >
                             ")"
                         >
                         ")"
