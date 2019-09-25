@@ -35,6 +35,19 @@ def remove_super_args(node, capture, arguments):
     capture['arglist'].remove()
 
 
+def remove_explicit_object_superclass(node, capture, arguments):
+    param = capture['param'][0]
+    if param.type == TOKEN.NAME:
+        # 'object'
+        capture['lpar'].remove()
+        param.remove()
+        capture['rpar'].remove()
+    elif param.type == syms.arglist:
+        kwarg = capture['kwarg'].clone()
+        kwarg.prefix = param.prefix
+        param.replace(kwarg)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Removes artifacts from a transition to python 3."
@@ -71,10 +84,8 @@ def main():
     (
         # Look for files in the current working directory
         Query(*args.files)
-        # dict([(a, b) for (a, b) in x])
-        # dict((a, b) for (a, b) in x)
-        # dict(((a, b) for (a, b) in x))
-        # --> {a: b for (a, b) in x}
+        # super(MyClassName, self) --> super()
+        # (where MyClassName is the type of self)
         .select(
             """
             power<
@@ -91,6 +102,23 @@ def main():
             """
         )
         .modify(callback=remove_super_args)
+        # class X(object): --> class X:
+        .select(
+            """
+            classdef<
+                "class" NAME lpar="("
+                    param=(
+                        "object" 
+                        | arglist<
+                            "object" ","
+                            kwarg=argument
+                        >
+                    )
+                rpar=")" ":" suite
+            >
+            """
+        )
+        .modify(callback=remove_explicit_object_superclass)
         # Actually run all of the above.
         .execute(
             # interactive diff implies write (for the bits the user says 'y' to)
